@@ -3,3 +3,7 @@ GANSER/PyTorch-GANSER/preprocessors/dataset/
 
 # 忽略日志文件
 GANSER/mycode/lightning_logs/
+
+mi_swin/subdataset/
+
+GANSER/mycode/.torcheeg/
