@@ -4,6 +4,11 @@ GANSER/PyTorch-GANSER/
 # 忽略日志文件
 GANSER/mycode/lightning_logs/
 GANSER/mycode/__pycache__
+GANSER/mycode/parameters/
+
 mi_swin/subdataset/
+mi_swin/__pycache__
 
 GANSER/mycode/.torcheeg/
+
+torcheeg/
