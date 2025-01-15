@@ -1,5 +1,5 @@
-# 忽略数据集
-GANSER/PyTorch-GANSER/preprocessors/dataset/
+
+GANSER/PyTorch-GANSER/
 
 # 忽略日志文件
 GANSER/mycode/lightning_logs/
