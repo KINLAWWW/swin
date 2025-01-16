@@ -228,7 +228,7 @@ class StrokePatientsMIDataset(BaseDataset):
                 if (not offline_transform is None):
                     eeg_clip = offline_transform(eeg=eeg_clip,
                                                  baseline=eeg_baseline)['eeg']
-                eeg_clip = eeg_clip.reshape(30,256)
+                eeg_clip = eeg_clip.reshape(30,128)
                 clip_id = f"{trial_id}_{write_pointer}"
                 record_info = {
                     "clip_id": clip_id,
@@ -263,7 +263,7 @@ class StrokePatientsMIDataset(BaseDataset):
         if self.online_transform:
             signal = self.online_transform(eeg=signal,
                                             baseline=baseline)['eeg']
-        signal = signal.reshape(1,256,7,5)
+        signal = signal.reshape(128,7,5)
         if self.label_transform:
             info = self.label_transform(y=info)['y']
         
