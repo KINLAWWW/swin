@@ -23,8 +23,8 @@ def drop_path_f(x, drop_prob: float = 0., training: bool = False):
     keep_prob = 1 - drop_prob
     shape = (x.shape[0],) + (1,) * (x.ndim - 1)  # work with diff dim tensors, not just 2D ConvNets
     random_tensor = keep_prob + torch.rand(shape, dtype=x.dtype, device=x.device)
-    random_tensor.floor_()  # binarize
-    output = x.div(keep_prob) * random_tensor
+    random_tensor.floor_()  # binarize 掩码的形状 (batch_size, 1, 1, 1) 保证同一个样本的整个特征图被一致地置零
+    output = x.div(keep_prob) * random_tensor # 缩放非置零部分，确保特征的整体分布不失真
     return output
 
 
@@ -58,7 +58,7 @@ class Mlp(nn.Module):
         x = self.drop(x)
         return x
 
-
+ 
 def window_partition(x, window_size):
     """
     Args:
@@ -88,8 +88,6 @@ def window_reverse(windows, window_size, B, D, H, W):
     x = windows.view(B, D // window_size[0], H // window_size[1], W // window_size[2], window_size[0], window_size[1], window_size[2], -1)
     x = x.permute(0, 1, 4, 2, 5, 3, 6, 7).contiguous().view(B, D, H, W, -1)
     return x
-
-
 
 
 def get_window_size(x_size, window_size, shift_size=None):
@@ -317,7 +315,7 @@ class PatchMerging(nn.Module):
             x: Input feature, tensor size (B, D, H, W, C).
         """
         B, D, H, W, C = x.shape
-
+        # print(x.shape)
         # padding
         # 检查是否需要填充
         pad_depth = (4 - D % 4) % 4  # 计算填充量
@@ -337,12 +335,12 @@ class PatchMerging(nn.Module):
         
         # 按通道拼接: [B, D/4, H, W, 4*C]
         x = torch.cat([x0, x1, x2, x3], dim=-1)
-
+        # print("after merge:", x.shape)
         # x = torch.cat([x0, x1, x2, x3], -1)  # B D H/2 W/2 4*C
 
         x = self.norm(x)
         x = self.reduction(x)
-
+        # print("after reduction:", x.shape)
         return x
 
 
@@ -472,6 +470,7 @@ class PatchEmbed3D(nn.Module):
     def forward(self, x):
         """Forward function."""
         # padding
+        # print(x.shape)
         _, _, D, H, W = x.size()
         if W % self.patch_size[2] != 0:
             x = F.pad(x, (0, self.patch_size[2] - W % self.patch_size[2]))
@@ -532,6 +531,7 @@ class SwinTransformer3D(nn.Module):
                  patch_norm=False,
                  frozen_stages=-1,
                  use_checkpoint=False,
+                 visual_mode=False,
                  num_classes=0):
         super().__init__()
 
@@ -543,6 +543,7 @@ class SwinTransformer3D(nn.Module):
         self.frozen_stages = frozen_stages
         self.window_size = window_size
         self.patch_size = patch_size
+        self.visual_mode = visual_mode
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed3D(
@@ -702,6 +703,7 @@ class SwinTransformer3D(nn.Module):
 
         if self.num_classes > 0:
             x = self.global_pool(x).flatten(1)  # Global average pooling
+        if not self.visual_mode:
             x = self.head(x)  # Classification head
 
         return x
