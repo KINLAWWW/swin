@@ -8,15 +8,6 @@ from typing import Optional
 import math
 
 def drop_path_f(x, drop_prob: float = 0., training: bool = False):
-    """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
-
-    This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
-    the original name is misleading as 'Drop Connect' is a different form of dropout in a separate paper...
-    See discussion: https://github.com/tensorflow/tpu/issues/494#issuecomment-532968956 ... I've opted for
-    changing the layer and argument names to 'drop path' rather than mix DropConnect as a layer name and use
-    'survival rate' as the argument.
-
-    """
     if drop_prob == 0. or not training:
         return x
     keep_prob = 1 - drop_prob
@@ -28,8 +19,6 @@ def drop_path_f(x, drop_prob: float = 0., training: bool = False):
 
 
 class DropPath(nn.Module):
-    """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
-    """
     def __init__(self, drop_prob=None):
         super(DropPath, self).__init__()
         self.drop_prob = drop_prob
@@ -135,7 +124,6 @@ class PatchMerging(nn.Module):
         assert L == H * W, "input feature has wrong size"
 
         x = x.view(B, H, W, C)
-
         # padding
         # 如果输入feature map的H，W不是2的整数倍，需要进行padding
         pad_input = (H % 2 == 1) or (W % 2 == 1)
@@ -144,7 +132,6 @@ class PatchMerging(nn.Module):
             # (C_front, C_back, W_left, W_right, H_top, H_bottom)
             # 注意这里的Tensor通道是[B, H, W, C]，所以会和官方文档有些不同
             x = F.pad(x, (0, 0, 0, W % 2, 0, H % 2))
-
         x0 = x[:, 0::2, 0::2, :]  # [B, H/2, W/2, C]
         x1 = x[:, 1::2, 0::2, :]  # [B, H/2, W/2, C]
         x2 = x[:, 0::2, 1::2, :]  # [B, H/2, W/2, C]
@@ -154,7 +141,6 @@ class PatchMerging(nn.Module):
 
         x = self.norm(x)
         x = self.reduction(x)  # [B, H/2*W/2, 2*C]
-
         return x
 
 
@@ -317,7 +303,7 @@ class SwinTransformerBlock(nn.Module):
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
     def forward(self, x, attn_mask):
-        H, W = self.H, self.W
+        H, W = self.H, self.W  # 在class BasicLayer里有进行赋值 blk.H, blk.W
         B, L, C = x.shape
         assert L == H * W, "input feature has wrong size"
 
@@ -400,7 +386,7 @@ class BasicLayer(nn.Module):
         self.shift_size = window_size // 2
 
         # build blocks
-        self.blocks = nn.ModuleList([
+        self.blocks = nn.ModuleList([  # 通过 nn.ModuleList，将多个 SwinTransformerBlock 层按顺序构建成一个模块列表
             SwinTransformerBlock(
                 dim=dim,
                 num_heads=num_heads,
@@ -634,3 +620,82 @@ class SwinTransformer_D(nn.Module):
         if self.visual_mode:
             return x,y
         return x
+
+
+
+class SwinTransformerGenerator(nn.Module):
+
+    def __init__(self, patch_size=4, in_chans=3, num_classes=1000,
+                 embed_dim=96, depths=(2, 2, 6, 2), num_heads=(3, 6, 12, 24),
+                 window_size=7, mlp_ratio=4., qkv_bias=True,
+                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
+                 norm_layer=nn.LayerNorm, patch_norm=True,visual_mode=False,
+                 use_checkpoint=False, **kwargs):
+        super().__init__()
+
+        self.num_classes = num_classes
+        self.num_layers = len(depths)
+        self.embed_dim = embed_dim
+        self.patch_norm = patch_norm
+        # stage4输出特征矩阵的channels
+        self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
+        self.mlp_ratio = mlp_ratio
+        self.visual_mode = visual_mode
+        # split image into non-overlapping patches
+        self.patch_embed = PatchEmbed(
+            patch_size=patch_size, in_c=in_chans, embed_dim=embed_dim,
+            norm_layer=norm_layer if self.patch_norm else None)
+        self.pos_drop = nn.Dropout(p=drop_rate)
+
+        # stochastic depth
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
+
+        # build layers
+        self.layers = nn.ModuleList()
+        for i_layer in range(self.num_layers):
+            # 注意这里构建的stage和论文图中有些差异
+            # 这里的stage不包含该stage的patch_merging层，包含的是下个stage的
+            layers = BasicLayer(dim=int(embed_dim * 2 ** i_layer),
+                                depth=depths[i_layer],
+                                num_heads=num_heads[i_layer],
+                                window_size=window_size,
+                                mlp_ratio=self.mlp_ratio,
+                                qkv_bias=qkv_bias,
+                                drop=drop_rate,
+                                attn_drop=attn_drop_rate,
+                                drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
+                                norm_layer=norm_layer,
+                                downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
+                                use_checkpoint=use_checkpoint)
+            self.layers.append(layers)
+
+        self.norm = norm_layer(self.num_features)
+        self.avgpool = nn.AdaptiveAvgPool1d(1)
+        self.head = nn.Linear(self.num_features, 128*9*9) if num_classes > 0 else nn.Identity()
+
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.trunc_normal_(m.weight, std=.02)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+
+    def forward(self, x):
+        # x: [B, L, C]
+        x, H, W = self.patch_embed(x)
+        x = self.pos_drop(x)
+
+        for layer in self.layers:
+            x, H, W = layer(x, H, W)
+           
+        x = self.norm(x)  # [B, L, C]
+        x = self.head(x)
+        B,_,_ = x.shape
+        x = x.view(B,-1, 9, 9)
+        return x
+
+
