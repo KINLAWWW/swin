@@ -47,7 +47,7 @@ class ToTensor(EEGTransform):
         return super().__call__(*args, eeg=eeg, baseline=baseline, **kwargs)
 
     def apply(self, eeg: np.ndarray, **kwargs) -> torch.Tensor:
-        eeg = np.expand_dims(eeg, axis=-1)
+        eeg = np.expand_dims(eeg, axis=0)
         return torch.from_numpy(eeg).float()
 
 class To2d(EEGTransform):
