@@ -5,6 +5,7 @@ import torch.utils.checkpoint as checkpoint
 import numpy as np
 from typing import Optional
 import math
+from eca import ECA
 
 def drop_path_f(x, drop_prob: float = 0., training: bool = False):
     if drop_prob == 0. or not training:
@@ -111,7 +112,7 @@ class PatchEmbed(nn.Module):
     def forward(self, x):
         # 假设输入维度为 (B, T, H, W, C)
         B, T, H, W, C = x.shape
-
+        
         # 将C维度移到前面，调整为 (B, C, H, W)
         x = x.permute(0, 4, 1, 2, 3).contiguous()  # 转为 (B, C, T, H, W)
 
@@ -516,7 +517,7 @@ class SwinTransformer(nn.Module):
                  embed_dim=96, depths=(2, 2, 4, 2), num_heads=(2, 2, 4, 6),
                  window_size=(4,2,2), mlp_ratio=4., qkv_bias=True,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
-                 norm_layer=nn.LayerNorm, patch_norm=True,
+                 norm_layer=nn.LayerNorm, patch_norm=True, visual=False,
                  use_checkpoint=False, **kwargs):
         super().__init__()
 
@@ -524,6 +525,7 @@ class SwinTransformer(nn.Module):
         self.num_layers = len(depths)
         self.embed_dim = embed_dim
         self.patch_norm = patch_norm
+        self.visual = visual
         # stage4输出特征矩阵的channels
         self.num_features = int(embed_dim * 4 ** (self.num_layers - 1))
         self.mlp_ratio = mlp_ratio
@@ -559,7 +561,7 @@ class SwinTransformer(nn.Module):
         self.norm = norm_layer(self.num_features)
         self.avgpool = nn.AdaptiveAvgPool1d(1)
         self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
-
+        self.eca = ECA(num_attention_heads=4, seq_len=128, hidden_dropout_prob=0.1)
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -573,14 +575,19 @@ class SwinTransformer(nn.Module):
 
     def forward(self, x):
         # x: [B, L, C]
+        # x = self.eca(x)
+        x = x.permute(0,2,3,4,1)
+        # print(x.shape)
         x, T, H, W = self.patch_embed(x)
+        # print(x.shape)
         x = self.pos_drop(x)
-
+        # print(x.shape)
         for layer in self.layers:
             x, T, H, W = layer(x, T, H, W)
-
         x = self.norm(x)  # [B, L, C]
         x = self.avgpool(x.transpose(1, 2))  # [B, C, 1]
-        y = torch.flatten(x, 1)
+        y = torch.flatten(x, 1) 
         x = self.head(y)
+        if self.visual:
+            return x, y
         return x

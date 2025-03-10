@@ -6,7 +6,8 @@ from scipy.io import loadmat
 import re
 import pandas as pd
 import mne
-
+from scipy.signal import stft
+import numpy as np
 
 class StrokePatientsMIDataset(BaseDataset):
     '''
@@ -133,6 +134,8 @@ class StrokePatientsMIDataset(BaseDataset):
         self.__dict__.update(params)
 
     
+
+    @staticmethod
     def process_record_edf(file,
                            chunk_size: int,
                            overlap: int,
@@ -140,7 +143,6 @@ class StrokePatientsMIDataset(BaseDataset):
                            **kwargs):
         subject_id = int(
             re.findall("sub-(\d\d)_task-motor-imagery_eeg.edf", file)[0])
-        paralysis_side = self.subjects_info.loc[subject_id-1, 'ParalysisSide']
         edf_reader = mne.io.read_raw_edf(file, preload=True)
         epochs = mne.make_fixed_length_epochs(edf_reader,
                                               duration=8,
@@ -176,20 +178,21 @@ class StrokePatientsMIDataset(BaseDataset):
                 if (not offline_transform is None):
                     eeg_clip = offline_transform(eeg=eeg_clip,
                                                  baseline=eeg_baseline)['eeg']
+                eeg_clip = eeg_clip.reshape(1,4, 30,128)
+
                 clip_id = f"{trial_id}_{write_pointer}"
                 record_info = {
                     "clip_id": clip_id,
                     'label': label,
                     'trial_id': trial_id,
                     'baseline_id': baseline_id,
-                    'subject_id': subject_id,
-                    'ParalysisSide': paralysis_side
+                    'subject_id': subject_id
                 }
                 yield {'eeg':eeg_clip,'key': clip_id, "info": record_info}
                 start, end = start + step, end + step
                 write_pointer += 1
 
-
+    @staticmethod
     def process_record(file,
                            chunk_size: int,
                            overlap: int,
@@ -197,7 +200,6 @@ class StrokePatientsMIDataset(BaseDataset):
                            **kwargs):
         subject_id = int(
             re.findall("sub-(\d\d)_task-motor-imagery_eeg.mat", file)[0])
-        paralysis_side = self.subjects_info.loc[subject_id-1, 'ParalysisSide']
         fdata = loadmat(os.path.join(file))
         X, Y = fdata['eeg'][0][
             0]  # X.shape = [40trials, 33channels,4000timepoints]
@@ -211,9 +213,9 @@ class StrokePatientsMIDataset(BaseDataset):
             label = 1 if trial_id % 2 else 0
 
             assert chunk_size > overlap, f"Arg 'chunk_size' must be larger than arg 'overlap'.Current chunksize is {chunk_size},overlap is {overlap}"
-            start = 1000
+            start = 1250
             step = chunk_size - overlap
-            end = start + step
+            end = start + chunk_size
             end_time_point = 3000
 
             write_pointer = 0
@@ -225,17 +227,19 @@ class StrokePatientsMIDataset(BaseDataset):
 
             while end <= end_time_point:
                 eeg_clip = eeg_trial[:, start:end]
+                # print(eeg_clip.shape)
                 if (not offline_transform is None):
                     eeg_clip = offline_transform(eeg=eeg_clip,
                                                  baseline=eeg_baseline)['eeg']
+                # eeg_clip = eeg_clip.reshape(1,1, 30,128)
+                # print(eeg_clip.shape)
                 clip_id = f"{trial_id}_{write_pointer}"
                 record_info = {
                     "clip_id": clip_id,
                     'label': label,
                     'trial_id': trial_id,
                     'baseline_id': baseline_id,
-                    'subject_id': subject_id,
-                    'ParalysisSide': paralysis_side
+                    'subject_id': subject_id
                 }
         
                 yield {'eeg':eeg_clip,'key': clip_id, "info": record_info}
@@ -260,15 +264,15 @@ class StrokePatientsMIDataset(BaseDataset):
         baseline_index = str(info['baseline_id'])
         signal = self.read_eeg(eeg_record, eeg_index)
         baseline = self.read_eeg(eeg_record, baseline_index)
-        p_side = 0 if str(info['ParalysisSide_x']).lower() == 'left' else 1
+
         if self.online_transform:
             signal = self.online_transform(eeg=signal,
                                             baseline=baseline)['eeg']
-    
+        signal = signal.squeeze(0)
         if self.label_transform:
             info = self.label_transform(y=info)['y']
         
-        return signal, (info, p_side)
+        return signal, info
 
     @property
     def repr_body(self) -> Dict:
@@ -410,6 +414,7 @@ class StrokePatientsMIProcessedDataset(StrokePatientsMIDataset):
                 if (not offline_transform is None):
                     eeg_clip = offline_transform(eeg=eeg_clip,
                                                  baseline=eeg_baseline)['eeg']
+                eeg_clip = eeg_clip.reshape(1,1, 30,128)
                 clip_id = f"{trial_id}_{write_pointer}"
                 record_info = {
                     "clip_id": clip_id,

@@ -178,6 +178,8 @@ class StrokePatientsMIDataset(BaseDataset):
                 if (not offline_transform is None):
                     eeg_clip = offline_transform(eeg=eeg_clip,
                                                  baseline=eeg_baseline)['eeg']
+                eeg_clip = eeg_clip.reshape(1,4, 30,128)
+
                 clip_id = f"{trial_id}_{write_pointer}"
                 record_info = {
                     "clip_id": clip_id,
@@ -229,8 +231,8 @@ class StrokePatientsMIDataset(BaseDataset):
                 if (not offline_transform is None):
                     eeg_clip = offline_transform(eeg=eeg_clip,
                                                  baseline=eeg_baseline)['eeg']
-                eeg_clip = eeg_clip.reshape(1, 30,128)
-
+                # eeg_clip = eeg_clip.reshape(1,1, 30,128)
+                # print(eeg_clip.shape)
                 clip_id = f"{trial_id}_{write_pointer}"
                 record_info = {
                     "clip_id": clip_id,
@@ -262,10 +264,11 @@ class StrokePatientsMIDataset(BaseDataset):
         baseline_index = str(info['baseline_id'])
         signal = self.read_eeg(eeg_record, eeg_index)
         baseline = self.read_eeg(eeg_record, baseline_index)
+
         if self.online_transform:
             signal = self.online_transform(eeg=signal,
                                             baseline=baseline)['eeg']
-        # signal = signal.reshape(5,100,7,5)
+        signal = signal.squeeze(0)
         if self.label_transform:
             info = self.label_transform(y=info)['y']
         
@@ -411,6 +414,7 @@ class StrokePatientsMIProcessedDataset(StrokePatientsMIDataset):
                 if (not offline_transform is None):
                     eeg_clip = offline_transform(eeg=eeg_clip,
                                                  baseline=eeg_baseline)['eeg']
+                eeg_clip = eeg_clip.reshape(1,1, 30,128)
                 clip_id = f"{trial_id}_{write_pointer}"
                 record_info = {
                     "clip_id": clip_id,

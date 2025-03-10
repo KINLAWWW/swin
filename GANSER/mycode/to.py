@@ -141,20 +141,48 @@ class ToGrid(EEGTransform):
         '''
         return super().__call__(*args, eeg=eeg, baseline=baseline, **kwargs)
 
-    def apply(self, eeg: np.ndarray, **kwargs) -> np.ndarray:
-        # num_electrodes x timestep
-        eeg = eeg.squeeze(0)
-        # print(eeg.shape)
-        outputs = np.zeros([self.height, self.width, eeg.shape[-1]])
-        # 9 x 9 x timestep
-        for i, locs in enumerate(self.channel_location_dict.values()):
-            if locs is None:
-                continue
-            (loc_y, loc_x) = locs
-            outputs[loc_y][loc_x] = eeg[i]
+    # def apply(self, eeg: np.ndarray, **kwargs) -> np.ndarray:
+    #     # num_electrodes x timestep
+    #     eeg = eeg.squeeze(0)
+    #     # print(eeg.shape)
+    #     outputs = np.zeros([self.height, self.width, eeg.shape[-1]])
+    #     # 9 x 9 x timestep
+    #     for i, locs in enumerate(self.channel_location_dict.values()):
+    #         if locs is None:
+    #             continue
+    #         (loc_y, loc_x) = locs
+    #         outputs[loc_y][loc_x] = eeg[i]
 
-        outputs = outputs.transpose(2, 0, 1)
-        # timestep x 9 x 9
+    #     outputs = outputs.transpose(2, 0, 1)
+    #     # timestep x 9 x 9
+    #     return outputs
+    def apply(self, eeg: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Args:
+            eeg: EEG signal of shape (1, num_bands, num_electrodes, timestep)
+                - 1: batch dimension, num_bands: frequency bands, num_electrodes: electrodes, timestep: time steps
+
+        Returns:
+            A tensor of shape (timestep, height, width) where each frequency band is applied as a different layer.
+        """
+        # eeg = eeg.squeeze(0)  # Remove batch dimension (shape: num_bands, num_electrodes, timestep)
+        
+        num_bands = eeg.shape[0]
+        num_electrodes = eeg.shape[1]
+        timestep = eeg.shape[2]
+
+        outputs = np.zeros((num_bands, self.height, self.width, timestep))  # Initialize the output shape
+
+        # Loop through each frequency band
+        for band_idx in range(num_bands):
+            # Populate the grid for the current frequency band
+            for i, locs in enumerate(self.channel_location_dict.values()):
+                if locs is None:
+                    continue
+                (loc_y, loc_x) = locs
+                outputs[band_idx, loc_y, loc_x, :] = eeg[band_idx, i, :]  # Fill in the data
+
+        outputs = outputs.transpose(0, 3, 1, 2)  # Transpose to (timestep, height, width, num_bands)
         return outputs
 
     def reverse(self, eeg: np.ndarray, **kwargs) -> np.ndarray:

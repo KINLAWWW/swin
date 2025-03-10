@@ -6,7 +6,7 @@ import numpy as np
 from functools import reduce, lru_cache
 from operator import mul
 from einops import rearrange
-
+from eca_multibands import ECA
 
 def drop_path_f(x, drop_prob: float = 0., training: bool = False):
     """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
@@ -514,7 +514,7 @@ class SwinTransformer3D(nn.Module):
 
     def __init__(self,
                  pretrained=None,
-                 pretrained2d=True,
+                 pretrained2d=None,
                  patch_size=(4,4,4),
                  in_chans=3,
                  embed_dim=96,
@@ -544,6 +544,7 @@ class SwinTransformer3D(nn.Module):
         self.window_size = window_size
         self.patch_size = patch_size
         self.visual_mode = visual_mode
+        self.eca = ECA(num_attention_heads=4, seq_len=128, hidden_dropout_prob=0.1)
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed3D(
@@ -690,6 +691,7 @@ class SwinTransformer3D(nn.Module):
 
     def forward(self, x):
         """Forward function."""
+        x = self.eca(x)
         x = self.patch_embed(x)
         # print(x.shape)
         x = self.pos_drop(x)

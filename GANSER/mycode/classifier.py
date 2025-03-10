@@ -125,8 +125,8 @@ class ClassifierTrainer(pl.LightningModule):
 
     def training_step(self, batch: Tuple[torch.Tensor],
                       batch_idx: int) -> torch.Tensor:
-        x, y = batch
-        y_hat = self(x)  # 解包返回的 tuple
+        x, y, _ = batch
+        y_hat, x_feat = self(x)  # 解包返回的 tuple
         loss = self.ce_fn(y_hat, y)
 
         self.log("train_loss",
@@ -174,8 +174,8 @@ class ClassifierTrainer(pl.LightningModule):
 
     def validation_step(self, batch: Tuple[torch.Tensor],
                         batch_idx: int) -> torch.Tensor:
-        x, y = batch
-        y_hat = self(x)  # 修改为解包
+        x, y, _ = batch
+        y_hat, x_feat = self(x)  # 修改为解包
         loss = self.ce_fn(y_hat, y)
 
         self.val_loss.update(loss)
@@ -208,8 +208,8 @@ class ClassifierTrainer(pl.LightningModule):
 
     def test_step(self, batch: Tuple[torch.Tensor],
                   batch_idx: int) -> torch.Tensor:
-        x, y = batch
-        y_hat= self(x)  # 修改为解包
+        x, y, _ = batch
+        y_hat, x_feat = self(x)  # 修改为解包
         loss = self.ce_fn(y_hat, y)
 
         self.test_loss.update(loss)
@@ -252,8 +252,8 @@ class ClassifierTrainer(pl.LightningModule):
                      batch: Tuple[torch.Tensor],
                      batch_idx: int,
                      dataloader_idx: int = 0):
-        x, y = batch
-        y_hat= self(x)  # 修改为解包
+        x, y, _ = batch
+        y_hat, x_feat = self(x)  # 修改为解包
         return (y_hat, features)
 
     def save(self, param_path):
