@@ -5,3 +5,12 @@
 3DpatcheegSwin/.torcheeg/
 
 torcheeg/
+
+# 忽略整个 BCI_csv 文件夹里的内容
+BCI_csv/*
+
+# 但保留下面两个文件
+!BCI_csv/classifier.ipynb
+!BCI_csv/preprocess.ipynb
+!BCI_csv/work.ipynb
+!BCI_csv/work_2.ipynb
