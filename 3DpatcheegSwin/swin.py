@@ -185,10 +185,10 @@ class WindowAttention(nn.Module):
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = head_dim ** -0.5  # 缩放因子
-
+        
 
         # 存储注意力分数的全局列表
-        self.attn_scores_list = []
+        self.attn_scores = 0
 
 
         # 定义相对位置偏差表
@@ -224,7 +224,7 @@ class WindowAttention(nn.Module):
         nn.init.trunc_normal_(self.relative_position_bias_table, std=.02)
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, mask: Optional[torch.Tensor] = None):
+    def forward(self, x, mask: Optional[torch.Tensor] = None, batch_size=16):
         """
         Args:
             x: Input features with shape of (num_windows*B, Th*Tw*Tw, C)
@@ -250,7 +250,7 @@ class WindowAttention(nn.Module):
         # 调整形状以匹配注意力矩阵
         relative_position_bias = relative_position_bias.unsqueeze(0)  # [1, nH, Th*Tw*Tw, Th*Tw*Tw]
         attn = attn + relative_position_bias                          # 加上相对位置偏差
-
+        
         # Masking (optional)
         if mask is not None:
             nW = mask.shape[0]  # num_windows
@@ -260,28 +260,28 @@ class WindowAttention(nn.Module):
         else:
             attn = self.softmax(attn)
 
-
+    
         # 如果模型在 eval 模式，则存储注意力分数
-        if not self.training:
+        if not self.training and mask is None:
             score = attn.detach().cpu()
-            self.attn_scores_list.append(score)
-            score = torch.mean(score, dim=1)  # 形状变为 (16, 36, 36)
-            score = torch.mean(score,dim=1)   # 计算所有token对一个token的平均影响力
-            score = score.view(16,-1,3,3)
-            score = torch.mean(score, dim=1)  # 形状变为 (16, 36, 36)
-            score = torch.mean(score, dim=0)  # 形状变为 (16, 36, 36)
-            print("attention scores:", score.shape, score)
-
+            score = score.view(batch_size, -1, self.num_heads, N, N)
+            
+            # score = torch.mean(score, dim=1)  # 形状变为 (2,2,27,27)
+            # score = torch.mean(score,dim=1)  # 形状变为 (2,27,27)
+            # score = torch.mean(score, dim=2)  # 形状变为 (2, 27)
+            # score = score.view(B_ // nW,3,3,3)
+            # score = torch.mean(score, dim=1)
+            self.attn_scores = score
+            
         attn = self.attn_drop(attn)
-        # Attention output
         x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
 
-    def clear_attn_scores(self):
-        """ 清空存储的注意力分数，防止占用过多内存 """
-        self.attn_scores_list = []
+    # def clear_attn_scores(self):
+    #     """ 清空存储的注意力分数，防止占用过多内存 """
+    #     self.attn_scores_list = []
 
 
 
@@ -357,7 +357,7 @@ class SwinTransformerBlock(nn.Module):
         x_windows = x_windows.view(-1, w_t * w_h * w_w, C)  
         
         # W-MSA/SW-MSA
-        attn_windows = self.attn(x_windows, mask=attn_mask)  # [nW*B, Mt*Mh*Mw, C]
+        attn_windows = self.attn(x_windows, mask=attn_mask, batch_size = B)  # [nW*B, Mt*Mh*Mw, C]
 
         # merge windows
         attn_windows = attn_windows.view(-1, w_t, w_h, w_w, C)  # [nW*B, Mt, Mh, Mw, C]
@@ -584,14 +584,17 @@ class SwinTransformer(nn.Module):
 
         x = x.permute(0,2,3,4,1) # 把Channel放到最后一维度
         x, T, H, W = self.patch_embed(x)
-        print(x.shape,T,H,W)
+        print("After patch_embed:", x.shape,T,H,W)
         x = self.pos_drop(x)
         for layer in self.layers:
             x, T, H, W = layer(x, T, H, W)
             print(x.shape,T,H,W)
         x = self.norm(x)  # [B, L, C]
+        print("After norm:", x.shape)
         x = self.avgpool(x.transpose(1, 2))  # [B, C, 1]
+        print("After avgpool:", x.shape)
         y = torch.flatten(x, 1) 
+        print("After flatten:", y.shape)
         x = self.head(y)
         if self.visual:
             return x, y
