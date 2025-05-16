@@ -111,7 +111,7 @@ class StrokePatientsMIDataset(BaseDataset):
         self.events_info = pd.read_csv(os.path.join(
             root_path, 'task-motor-imagery_events.tsv'),
                                        sep='\t')
-        # pass all arguments to super class
+
         params = {
             'root_path': root_path,
             'chunk_size': chunk_size,
@@ -130,7 +130,6 @@ class StrokePatientsMIDataset(BaseDataset):
             'verbose': verbose,
         }
         super().__init__(**params)
-        # save all arguments to __dict__
         self.__dict__.update(params)
 
     
@@ -148,16 +147,12 @@ class StrokePatientsMIDataset(BaseDataset):
                                               duration=8,
                                               preload=True)
         data = epochs.get_data(
-        )  # shape(40,33,4000) -num_trial, channels, T—duration（8s）
+        )  
 
-                  
         eeg = data[:, :30, :]
-        #eog = data[:, 30:32, :]
-
 
         for trial_id, eeg_trial in enumerate(eeg):
             eeg_baseline = eeg_trial[:, :1000]
-            #eog_baseline = eog_trial[:, :1000]
             label = 1 if trial_id % 2 else 0
 
             assert chunk_size > overlap, f"Arg 'chunk_size' must be larger than arg 'overlap'.Current chunksize is {chunk_size},overlap is {overlap}"
@@ -167,7 +162,6 @@ class StrokePatientsMIDataset(BaseDataset):
             end_time_point = 3000
             
             write_pointer = 0
-            #PUT baseline into io
             baseline_id = f"{trial_id}_{write_pointer}"
             yield_dict = {'key': baseline_id,'eeg':eeg_baseline}
             yield yield_dict
